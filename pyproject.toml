@@ -8,6 +8,7 @@ dependencies = [
     "faker>=33.3.0",
     "kafka-python>=2.0.2",
     "numpy>=2.2.1",
+    "pydantic-settings>=2.7.1",
     "pydantic>=2.10.5",
     "pyspark>=3.5.4",
     "redis>=5.2.1",

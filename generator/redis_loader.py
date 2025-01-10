@@ -6,6 +6,7 @@ from logging import getLogger
 from typing import Generator
 
 import redis
+from config import settings
 from data_generator import CustomerProfile, DataGenerator
 
 logger = getLogger(__name__)
@@ -71,10 +72,23 @@ def store_customer_data_in_redis(
         logger.info(f"Stored data for customer {customer_id}")
 
 
-if __name__ == "__main__":
-    redis_client = redis.Redis(host="localhost", port=6379)
+def run():
+    """
+    Initializes a Redis client and generates customer profiles to be stored in Redis.
+
+    This function creates a Redis client using the host and port specified in
+    the settings. It then instantiates a DataGenerator object to generate a
+    specified number of customer profiles. These profiles are subsequently
+    stored in the Redis database using the store_customer_data_in_redis function.
+    """
+
+    redis_client = redis.Redis(host=settings.redis_host, port=settings.redis_port)
     gen = DataGenerator()
     profiles: Generator[CustomerProfile, None, None] = gen.generate_customer_data(
-        num_customers=100_000
+        num_customers=settings.num_customers
     )
     store_customer_data_in_redis(profiles, redis_client)
+
+
+if __name__ == "__main__":
+    run()
