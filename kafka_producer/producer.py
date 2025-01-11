@@ -5,8 +5,8 @@ from dataclasses import asdict, dataclass
 from random import random
 from typing import Any, Callable, TypeAlias
 import random
-from config import settings
-from data_generator import DataGenerator
+from core.config import settings
+from generator.data_generator import DataGenerator
 
 import six
 import sys
@@ -16,7 +16,7 @@ if sys.version_info >= (3, 12, 0):
 
 
 from kafka import KafkaProducer
-from logger import get_logger
+from core.logger import get_logger
 
 SerializerFunc: TypeAlias = Callable[[Any], bytes]
 

@@ -52,8 +52,8 @@ kafka-recreate: kafka-delete kafka-create
 
 load-redis:
 	@echo "Loading data into Redis..."
-	python generator/redis_loader.py
+	python -m redis_loader.loader
 
 kafka-producer:
 	@echo "Running Kafka producer..."
-	python generator/kafka_producer.py
+	python -m kafka_producer.producer

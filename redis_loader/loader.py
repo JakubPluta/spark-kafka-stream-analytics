@@ -6,10 +6,10 @@ from itertools import chain, islice
 from typing import Generator
 
 import redis
-from config import settings
-from data_generator import CustomerProfile, DataGenerator
+from core.config import settings
+from generator.data_generator import CustomerProfile, DataGenerator
 
-from logger import get_logger
+from core.logger import get_logger
 
 logger = get_logger(__name__)
 
