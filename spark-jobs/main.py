@@ -8,6 +8,7 @@ import random
 
 from confluent_kafka import SerializingProducer
 import simplejson as json
+from config import Settings
 
 
 @dataclasses.dataclass
@@ -19,15 +20,9 @@ class Coordinates:
 LONDON_COORDS = Coordinates(51.5074, -0.1278)
 BIRMINGHAM_COORDS = Coordinates(52.4862, -1.8904)
 
-LATITUDE_INCREMENT = (BIRMINGHAM_COORDS.latitude - LONDON_COORDS.latitude) / 10
-LONGITUDE_INCREMENT = (BIRMINGHAM_COORDS.longitude - LONDON_COORDS.longitude) / 10
+LATITUDE_INCREMENT = (BIRMINGHAM_COORDS.latitude - LONDON_COORDS.latitude) / 100
+LONGITUDE_INCREMENT = (BIRMINGHAM_COORDS.longitude - LONDON_COORDS.longitude) / 100
 
-KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
-VEHICLE_TOPIC = os.getenv("VEHICLE_TOPIC", "vehicle")
-GPS_TOPIC = os.getenv("GPS_TOPIC", "gps")
-TRAFFIC_TOPIC = os.getenv("TRAFFIC_TOPIC", "traffic")
-WEATHER_TOPIC = os.getenv("WEATHER_TOPIC", "weather")
-EMERGENCY_TOPIC = os.getenv("EMERGENCY_TOPIC", "emergency")
 
 # global variables
 start_time = datetime.datetime.now(tz=datetime.timezone.utc)
@@ -159,18 +154,18 @@ def run_simulation(p: SerializingProducer, device_id: str):
             print("Vehicle reached Birmingham. Breaking loop")
             break
 
-        produce(p, VEHICLE_TOPIC, vehicle_data)
-        produce(p, GPS_TOPIC, gps_data)
-        produce(p, TRAFFIC_TOPIC, traffic_camera_data)
-        produce(p, WEATHER_TOPIC, weather_data)
-        produce(p, EMERGENCY_TOPIC, emergency_data)
+        produce(p, Settings.VEHICLE_TOPIC, vehicle_data)
+        produce(p, Settings.GPS_TOPIC, gps_data)
+        produce(p, Settings.TRAFFIC_TOPIC, traffic_camera_data)
+        produce(p, Settings.WEATHER_TOPIC, weather_data)
+        produce(p, Settings.EMERGENCY_TOPIC, emergency_data)
 
         time.sleep(1)
 
 
 if __name__ == "__main__":
     producer_config = {
-        "bootstrap.servers": KAFKA_BOOTSTRAP_SERVERS,
+        "bootstrap.servers": Settings.KAFKA_BOOTSTRAP_SERVERS,
         "error_cb": lambda err: print("Kafka Error: {}".format(err)),
     }
 
