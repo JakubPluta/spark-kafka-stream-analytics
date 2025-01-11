@@ -48,3 +48,12 @@ kafka-create:
 
 kafka-recreate: kafka-delete kafka-create
 	@echo "Kafka topic $(TOPIC) has been deleted and recreated with $(PARTITIONS) partitions and $(REPLICATION_FACTOR) replication factor."
+
+
+load-redis:
+	@echo "Loading data into Redis..."
+	python generator/redis_loader.py
+
+kafka-producer:
+	@echo "Running Kafka producer..."
+	python generator/kafka_producer.py

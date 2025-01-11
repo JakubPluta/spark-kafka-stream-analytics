@@ -2,15 +2,16 @@ import json
 from dataclasses import asdict
 from functools import partial
 from itertools import chain, islice
-from logging import getLogger
+
 from typing import Generator
 
 import redis
 from config import settings
 from data_generator import CustomerProfile, DataGenerator
 
-logger = getLogger(__name__)
-logger.setLevel("INFO")
+from logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def chunkify(iterable, size=1000):
@@ -55,6 +56,7 @@ def store_customer_data_in_redis(
         customer profile as a JSON string.
     """
     for idx, chunk in enumerate(chunkify(data)):
+        size = 0
         logger.info(f"Storing chunk {idx}")
         pipeline = redis_client.pipeline()
         for profile in chunk:
@@ -67,9 +69,9 @@ def store_customer_data_in_redis(
                     "data": json.dumps(asdict(profile)),
                 },
             )
-
+            size += 1
+        logger.info("Stored data for {} customers".format(size))
         pipeline.execute()
-        logger.info(f"Stored data for customer {customer_id}")
 
 
 def run():

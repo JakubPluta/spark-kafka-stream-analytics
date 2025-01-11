@@ -241,7 +241,8 @@ class DataGenerator:
             debt_to_income_ratio=round(random.uniform(0.1, 0.6), 2),
         )
 
-    def generate_behavioral_metrics(self) -> BehavioralMetrics:
+    @staticmethod
+    def generate_behavioral_metrics() -> BehavioralMetrics:
         return BehavioralMetrics(
             average_monthly_transactions=random.randint(20, 200),
             last_month_transactions=random.randint(15, 250),
@@ -361,7 +362,8 @@ class DataGenerator:
             ).isoformat(),
         )
 
-    def generate_loan_application_event(self, customer_id: int) -> LoanApplicationEvent:
+    @staticmethod
+    def generate_loan_application_event(customer_id: int) -> LoanApplicationEvent:
         requested_amount = round(random.uniform(5000, 500000), 2)
         requested_term_months = random.choice([12, 24, 36, 48, 60, 72, 84, 96, 120])
 
