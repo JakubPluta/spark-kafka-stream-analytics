@@ -233,11 +233,11 @@ class DataGenerator:
             investment_portfolio_value=round(random.uniform(0, 200000), 2),
             last_year_tax_return_amount=round(random.uniform(-10000, 50000), 2),
             bankruptcy_history=bankruptcy_history,
-            last_bankruptcy_date=self.fake.date_between(
-                start_date="-10y", end_date="today"
-            ).isoformat()
-            if bankruptcy_history
-            else None,
+            last_bankruptcy_date=(
+                self.fake.date_between(start_date="-10y", end_date="today").isoformat()
+                if bankruptcy_history
+                else None
+            ),
             debt_to_income_ratio=round(random.uniform(0.1, 0.6), 2),
         )
 
@@ -371,23 +371,25 @@ class DataGenerator:
             event_id=str(uuid.uuid4()),
             customer_id=customer_id,
             timestamp=datetime.now().isoformat(),
-            application_channel=random.choice(list(ApplicationChannel)),
-            loan_purpose=random.choice(list(LoanPurpose)),
+            application_channel=random.choice(
+                list(x.value for x in ApplicationChannel)
+            ),
+            loan_purpose=random.choice(list(x.value for x in LoanPurpose)),
             requested_amount=requested_amount,
             requested_term_months=requested_term_months,
             proposed_interest_rate=round(random.uniform(0.029, 0.15), 3),
             collateral_type=random.choice(
                 [None, "Vehicle", "Property", "Investment", "Other"]
             ),
-            collateral_value=round(
-                random.uniform(requested_amount * 1.2, requested_amount * 2), 2
-            )
-            if random.random() > 0.3
-            else None,
+            collateral_value=(
+                round(random.uniform(requested_amount * 1.2, requested_amount * 2), 2)
+                if random.random() > 0.3
+                else None
+            ),
             cosigner_present=random.random() < 0.2,
-            cosigner_credit_score=random.randint(600, 850)
-            if random.random() < 0.2
-            else None,
+            cosigner_credit_score=(
+                random.randint(600, 850) if random.random() < 0.2 else None
+            ),
             monthly_payment=round(
                 requested_amount
                 / requested_term_months
@@ -431,12 +433,12 @@ class DataGenerator:
             session_duration=random.randint(60, 3600),
             number_of_attempts=random.randint(1, 5),
             previous_applications_count=random.randint(0, 5),
-            marketing_campaign_id=f"CAMP_{random.randint(1000, 9999)}"
-            if random.random() < 0.3
-            else None,
-            partner_referral_id=f"REF_{random.randint(1000, 9999)}"
-            if random.random() < 0.2
-            else None,
+            marketing_campaign_id=(
+                f"CAMP_{random.randint(1000, 9999)}" if random.random() < 0.3 else None
+            ),
+            partner_referral_id=(
+                f"REF_{random.randint(1000, 9999)}" if random.random() < 0.2 else None
+            ),
             application_completion_time=random.randint(300, 1800),
             user_agent=fake.user_agent(),
             browser_language=random.choice(["en-US", "en-GB", "es-ES", "fr-FR"]),

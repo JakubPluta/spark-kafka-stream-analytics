@@ -2,11 +2,15 @@ import logging
 import sys
 from typing import Optional
 
-LOG_FORMAT = '%(asctime)s - %(filename)s - %(funcName)s - %(name)s - %(levelname)s - %(message)s'
-LOG_DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
+LOG_FORMAT = (
+    "%(asctime)s - %(filename)s - %(funcName)s - %(name)s - %(levelname)s - %(message)s"
+)
+LOG_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-def get_logger(name: Optional[str] = None, level: int = logging.DEBUG) -> logging.Logger:
+def get_logger(
+    name: Optional[str] = None, level: int = logging.DEBUG
+) -> logging.Logger:
     """
     Set up a _logger that will log only to the console (stdout).
     """
@@ -24,7 +28,4 @@ def get_logger(name: Optional[str] = None, level: int = logging.DEBUG) -> loggin
     return _logger
 
 
-__all__ = ['get_logger']
-
-
-
+__all__ = ["get_logger"]

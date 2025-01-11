@@ -26,7 +26,7 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_LOG_RETENTION_HOURS: 168  # Optional: Adjust retention policies
       KAFKA_LOG_SEGMENT_BYTES: 1073741824 # Optional: Segment size for logs
-      KAFKA_DELETE_TOPIC_ENABLE: "true"  # <--- Enable topic deletion
+      KAFKA_DELETE_TOPIC_ENABLE: true  # <--- Enable topic deletion
 
   redis:
     container_name: redis
@@ -39,6 +39,7 @@ services:
       
   spark-master:
     image: bitnami/spark:latest
+    hostname: spark-master
     environment:
       - SPARK_MODE=master
       - SPARK_RPC_AUTHENTICATION_ENABLED=no

@@ -12,7 +12,7 @@ import six
 import sys
 
 if sys.version_info >= (3, 12, 0):
-    sys.modules['kafka.vendor.six.moves'] = six.moves
+    sys.modules["kafka.vendor.six.moves"] = six.moves
 
 
 from kafka import KafkaProducer
@@ -35,6 +35,18 @@ def default_json_serializer(x) -> bytes:
     return json.dumps(x, sort_keys=True, default=str).encode("utf-8")
 
 
+def default_key_serializer(x) -> bytes:
+    """Serializes the given object into a JSON bytes object.
+
+    Args:
+        x: The object to be serialized.
+
+    Returns:
+        A bytes object containing the JSON representation of the given object.
+    """
+    return str(x).encode("utf-8")
+
+
 class EventsProducer(ABC):
     @abstractmethod
     def produce_event(self, topic: str, event: dict, **kwargs: Any) -> None:
@@ -45,6 +57,7 @@ class EventsProducer(ABC):
 class ProducerConfiguration:
     bootstrap_servers: str
     value_serializer: SerializerFunc = default_json_serializer
+    key_serializer: SerializerFunc = default_key_serializer
 
     def as_dict(self):
         """Converts the ProducerConfiguration dataclass instance into a dictionary."""
@@ -52,7 +65,9 @@ class ProducerConfiguration:
 
 
 class LoanEventsProducer(EventsProducer):
-    def __init__(self, config: ProducerConfiguration, **other_kafka_producer_kwargs: Any):
+    def __init__(
+        self, config: ProducerConfiguration, **other_kafka_producer_kwargs: Any
+    ):
         """Initializes a Kafka producer with the given configuration parameters.
 
         Args:
@@ -66,7 +81,9 @@ class LoanEventsProducer(EventsProducer):
         self.other_params = other_kafka_producer_kwargs or {}
         try:
             logger.info(f"Initializing Kafka producer with params: {self.other_params}")
-            self.producer = self._initialize_producer(**{**self.config.as_dict(), **self.other_params})
+            self.producer = self._initialize_producer(
+                **{**self.config.as_dict(), **self.other_params}
+            )
         except (TypeError, AttributeError) as e:
             logger.error(f"Failed to initialize Kafka producer configuration: {e}")
             raise e
@@ -99,7 +116,7 @@ class LoanEventsProducer(EventsProducer):
         """
         try:
             logger.info(f"Producing event: event_id: {event['event_id']}")
-            self.producer.send(topic, event)
+            a = self.producer.send(topic, key=str(event["customer_id"]), value=event)
         except Exception as e:
             logger.error(f"Failed to produce event: {e}")
             raise e
@@ -121,7 +138,7 @@ def run_kafka_producer(topic: str, events_per_second: int = 10) -> None:
     """
     gen = DataGenerator()
     kafka_producer = LoanEventsProducer(
-        config=ProducerConfiguration(bootstrap_servers="localhost:9092")
+        config=ProducerConfiguration(bootstrap_servers=settings.kafka_brokers)
     )
 
     logger.info("Starting event generation")
@@ -147,5 +164,4 @@ def run_kafka_producer(topic: str, events_per_second: int = 10) -> None:
 
 
 if __name__ == "__main__":
-    TOPIC = "loan-application-events"
-    run_kafka_producer(TOPIC, events_per_second=10)
+    run_kafka_producer(settings.kafka_input_topic, events_per_second=2)

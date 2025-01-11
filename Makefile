@@ -57,3 +57,7 @@ load-redis:
 kafka-producer:
 	@echo "Running Kafka producer..."
 	python -m kafka_producer.producer
+
+spark-app:
+	@echo "Running Spark application..."
+	python -m sparky.app
