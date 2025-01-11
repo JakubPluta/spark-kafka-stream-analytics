@@ -5,9 +5,14 @@ from dataclasses import asdict, dataclass
 from logging import getLogger
 from random import random
 from typing import Any, Callable, TypeAlias
-
+import random
 from config import settings
 from data_generator import DataGenerator
+
+import six
+import sys
+if sys.version_info >= (3, 12, 0):
+    sys.modules['kafka.vendor.six.moves'] = six.moves
 from kafka import KafkaProducer
 
 logger = getLogger(__name__)
@@ -45,6 +50,7 @@ class LoanEventsProducer(EventsProducer):
             self.producer = self._initialize_producer(**params)
         except (TypeError, AttributeError) as e:
             logger.error(f"Failed to initialize Kafka producer configuration: {e}")
+            raise e
         except Exception as e:
             logger.error(f"Failed to initialize Kafka producer: {e}")
             raise e
@@ -82,7 +88,8 @@ def run_kafka_producer(topic, events_per_second=10):
     kafka_producer = LoanEventsProducer(
         config=ProducerConfiguration(bootstrap_servers="localhost:9092")
     )
-    topic = "loan_application_events"
+
+    logger.info("Starting event generation")
 
     try:
         while True:
@@ -97,3 +104,8 @@ def run_kafka_producer(topic, events_per_second=10):
         kafka_producer.flush()
         kafka_producer.close()
         logger.info("Producer finished")
+
+
+if __name__ == "__main__":
+    topic = "loan-application-events"
+    run_kafka_producer(topic, events_per_second=10)
