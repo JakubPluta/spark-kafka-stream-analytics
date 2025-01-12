@@ -1,11 +1,10 @@
-import pyspark
 from pyspark.sql import SparkSession, DataFrame, DataFrameWriter
 from pyspark.sql.types import StructType
 from core.config import settings
 from pyspark.sql import functions as F
 
 from sparky.schema import LoanApplicationSchema, CustomerProfileSchema
-from pyspark.sql.streaming.readwriter import DataStreamWriter, DataStreamReader
+from pyspark.sql.streaming.readwriter import DataStreamReader
 
 
 def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
@@ -35,7 +34,6 @@ def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
         .config("spark.redis.port", "6379")
         .getOrCreate()
     )
-    spark.sparkContext.setLogLevel("WARN")
     return spark
 
 
@@ -178,38 +176,34 @@ def process_batch(batch_df: DataFrame, batch_id: int):
     Process a single batch of data from the Kafka topic.
 
     This function reads the customer data from Redis, joins it with the
-    loan application data, analyzes the risk of the customers, and returns the
-    aggregated data.
+    loan application data, analyzes the risk of the customers, and writes
+    the analyzed data to Kafka.
 
     Args:
         batch_df (DataFrame): The DataFrame containing the loan applications for this batch.
         batch_id (int): The ID of the batch.
 
     """
-    # Get the customer IDs for this batch
+
     customer_ids = batch_df.select("customer_id").distinct().collect()
     customer_ids = [x.customer_id for x in customer_ids]
 
-    # Read the customer data from Redis
     redis_df = _read_single_customer_from_redis(
         spark=batch_df.sparkSession, customer_id=customer_ids[0]
     )
 
-    # Join the customer data with the loan application data
     final_df = batch_df.join(redis_df, on=["customer_id"], how="inner")
 
-    # Analyze the risk of the customers
     risk_df = analyze_risk(final_df)
 
-    # risk_df.write.format("delta").mode("append").save(settings.delta_output_path)
-    risk_df.show(truncate=False)
+    # risk_df.show(truncate=False)
     write_to_kafka(risk_df, settings.kafka_output_topic)
 
 
 if __name__ == "__main__":
     spark: SparkSession = get_spark_session()
 
-    df = read_kafka_stream(
+    df: DataFrame = read_kafka_stream(
         spark=spark, topic=settings.kafka_input_topic, schema=LoanApplicationSchema
     )
     df.writeStream.foreachBatch(process_batch).start().awaitTermination()
