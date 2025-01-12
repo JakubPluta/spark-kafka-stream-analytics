@@ -5,6 +5,9 @@ from pyspark.sql import functions as F
 
 from sparky.schema import LoanApplicationSchema, CustomerProfileSchema
 from pyspark.sql.streaming.readwriter import DataStreamReader
+from core.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
@@ -57,7 +60,7 @@ def read_kafka_stream(
         .option("subscribe", topic)
         .option("startingOffsets", "earliest")
         .option(
-            "maxOffsetsPerTrigger", "1"
+            "maxOffsetsPerTrigger", 1
         )  # Only read one message at a time, as we can't read multiple messages from redis later
         .load()
         .selectExpr("CAST(value AS STRING)")
@@ -110,6 +113,16 @@ def read_from_redis(spark: SparkSession) -> DataFrame:
 def _read_single_customer_from_redis(
     spark: SparkSession, customer_id: int
 ) -> DataFrame:
+    """
+    Reads a single customer profile from Redis and returns a DataFrame.
+
+    Args:
+        spark (SparkSession): The Spark session.
+        customer_id (int): The ID of the customer to read.
+
+    Returns:
+        DataFrame: The DataFrame containing the customer profile.
+    """
     # Read data from Redis using the Spark Redis connector
     return (
         spark.read.format("org.apache.spark.sql.redis")
@@ -187,7 +200,7 @@ def process_batch(batch_df: DataFrame, batch_id: int):
 
     customer_ids = batch_df.select("customer_id").distinct().collect()
     customer_ids = [x.customer_id for x in customer_ids]
-
+    logger.info(f"Processing batch {batch_id} for customers: :{len(customer_ids)}: {customer_ids}")
     redis_df = _read_single_customer_from_redis(
         spark=batch_df.sparkSession, customer_id=customer_ids[0]
     )
