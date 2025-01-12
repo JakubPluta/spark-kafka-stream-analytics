@@ -116,7 +116,7 @@ class LoanEventsProducer(EventsProducer):
         """
         try:
             logger.info(f"Producing event: event_id: {event['event_id']}")
-            a = self.producer.send(topic, key=str(event["customer_id"]), value=event)
+            self.producer.send(topic, key=str(event["customer_id"]), value=event)
         except Exception as e:
             logger.error(f"Failed to produce event: {e}")
             raise e
