@@ -66,7 +66,7 @@ def read_kafka_stream(
     )
 
 
-def write_to_kafka(df: DataFrame, topic: str) -> DataFrameWriter:
+def write_to_kafka(df: DataFrame, topic: str):
     """
     Writes a DataFrame to a Kafka topic.
 
@@ -83,7 +83,7 @@ def write_to_kafka(df: DataFrame, topic: str) -> DataFrameWriter:
         .option("kafka.bootstrap.servers", settings.kafka_brokers)
         .option("topic", topic)
         .option("checkpointLocation", "./checkpoint")
-    )
+    ).save()
 
 
 def read_from_redis(spark: SparkSession) -> DataFrame:
@@ -196,8 +196,10 @@ def process_batch(batch_df: DataFrame, batch_id: int):
 
     risk_df = analyze_risk(final_df)
 
-    # risk_df.show(truncate=False)
-    write_to_kafka(risk_df, settings.kafka_output_topic)
+    to_kafka_df = risk_df.select(
+        F.col("customer_id").alias("key"), F.to_json(F.struct("*")).alias("value")
+    ).selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
+    write_to_kafka(to_kafka_df, settings.kafka_output_topic)
 
 
 if __name__ == "__main__":

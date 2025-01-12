@@ -26,10 +26,15 @@ kafka-delete-all:
 	docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --delete --topic '.*'
 
 # Start Kafka consumer for a specific topic
-kafka-consumer:
+kafka-consumer-input:
 	@echo "Starting Kafka consumer for topic: $(TOPIC)..."
 	docker exec $(KAFKA_CONTAINER) kafka-console-consumer \
 		--bootstrap-server $(BOOTSTRAP_SERVER) --topic $(TOPIC)
+
+kafka-consumer-output:
+	@echo "Starting Kafka consumer for topic: $(OUTPUT_TOPIC)..."
+	docker exec $(KAFKA_CONTAINER) kafka-console-consumer \
+		--bootstrap-server $(BOOTSTRAP_SERVER) --topic $(OUTPUT_TOPIC) --from-beginning
 
 kafka-consumer-from-beginning:
 	@echo "Starting Kafka consumer for topic: $(TOPIC) from the beginning..."
