@@ -88,7 +88,11 @@ load-redis:
 
 kafka-producer:
 	@echo "Running Kafka producer..."
-	python -m kafka_producer.producer
+	python -m kafka_producer.run_simple_producer
+
+kafka-producer-full:
+	@echo "Running Kafka producer..."
+	python -m kafka_producer.run_full_msg_producer
 
 spark-app:
 	@echo "Running Spark application..."

@@ -1,6 +1,6 @@
 import random
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, Generator, List, Optional
@@ -193,6 +193,11 @@ class LoanApplicationEvent:
     device_type: str
     correlation_id: str
     batch_id: str
+
+
+@dataclass
+class LoanApplicationEventWithCustomerProfile(LoanApplicationEvent):
+    customer_profile: CustomerProfile
 
 
 class DataGenerator:
@@ -451,6 +456,15 @@ class DataGenerator:
             batch_id=f"BATCH_{datetime.now().strftime('%Y%m%d')}_{random.randint(1000, 9999)}",
         )
 
+    def generate_loan_event_with_customer_data(
+        self, customer_id: int
+    ) -> LoanApplicationEventWithCustomerProfile:
+        loan_event = self.generate_loan_application_event(customer_id)
+        customer_profile = self.generate_customer_profile(customer_id)
+        return LoanApplicationEventWithCustomerProfile(
+            **asdict(loan_event), customer_profile=customer_profile
+        )
+
     def generate_customer_data(
         self, num_customers: int
     ) -> Generator[CustomerProfile, None, None]:
@@ -462,6 +476,7 @@ class DataGenerator:
         self, num_events: int, customer_ids: List[int]
     ) -> List[LoanApplicationEvent]:
         """Generate random loan application events for existing customers"""
+
         return [
             self.generate_loan_application_event(random.choice(customer_ids))
             for _ in range(num_events)

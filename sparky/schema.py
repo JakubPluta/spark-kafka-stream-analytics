@@ -167,3 +167,9 @@ CustomerProfileSchema = StructType(
         StructField("last_credit_review_date", StringType(), True),
     ]
 )
+
+
+LoanApplicationSchemaWithCustomerProfile = StructType(
+    LoanApplicationSchema.fields
+    + [StructField("customer_profile", CustomerProfileSchema, True)]
+)
