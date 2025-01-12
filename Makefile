@@ -9,7 +9,6 @@ KAFKA_CREATE_TOPICS_TIMEOUT=15
 # kafka with redis project
 APP_WITH_REDIS_INPUT_TOPIC=loan-application-events
 APP_WITH_REDIS_OUTPUT_TOPIC=loan-application-events-processed
-
 # only kafka project
 APP_ONLY_KAFKA_INPUT_TOPIC=loan-application-events-single
 APP_ONLY_KAFKA_OUTPUT_TOPIC=loan-application-events-processed-single
@@ -17,9 +16,9 @@ APP_ONLY_KAFKA_OUTPUT_TOPIC=loan-application-events-processed-single
 # Docker and environment settings
 DOCKER_COMPOSE_FILE=docker-compose.yaml
 PYTHON=python
-PIP=pip
 
-.PHONY: all up down install clean kafka-* spark-* load-redis help
+
+.PHONY: all up down clean kafka-* spark-* load-redis help
 
 # Default target
 all: help
@@ -78,25 +77,34 @@ kafka-delete-all:
 	@echo "Deleting all Kafka topics..."
 	docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --delete --topic '.*' || true
 
-# Enhanced topic creation with configuration
-define create_topic
-	@echo "Creating Kafka topic: $(1)..."
-	docker exec $(KAFKA_CONTAINER) kafka-topics \
-		--bootstrap-server $(BOOTSTRAP_SERVER) \
-		--create \
-		--if-not-exists \
-		--topic $(1) \
-		--partitions $(PARTITIONS)
-endef
-
-# delete topic
 define topic_exists
 	$(shell docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --list | grep -x $(1) > /dev/null && echo 1 || echo 0)
 endef
 
+test_topic_exists:
+	@echo "Topic exists: $(call topic_exists,$(APP_WITH_REDIS_OUTPUT_TOPIC))"
+
+
+# Enhanced topic creation with configuration
+define create_topic
+	@echo "Creating/verifying Kafka topic: $(1)..."
+	@if [ $(call topic_exists,$(1)) = 1 ]; then \
+		echo "Topic $(1) already exists, skipping creation."; \
+	else \
+		docker exec $(KAFKA_CONTAINER) kafka-topics \
+			--bootstrap-server $(BOOTSTRAP_SERVER) \
+			--create \
+			--topic $(1) \
+			--partitions $(PARTITIONS) 2>&1 | grep -v "already exists" || true; \
+	fi
+endef
+
+# delete topic
+
+
 define delete_topic
 	@echo "Checking and deleting Kafka topic: $(1)..."
-	@if [ "$(call topic_exists,$(1))" = "1" ]; then \
+	@if [ $(call topic_exists,$(1)) = 1 ]; then \
 		echo "Deleting topic $(1)..."; \
 		docker exec $(KAFKA_CONTAINER) kafka-topics \
 			--bootstrap-server $(BOOTSTRAP_SERVER) \
@@ -167,6 +175,13 @@ kafka-consumer-input-single:
 kafka-consumer-output-single:
 	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_TOPIC),)
 
+kafka-consumer-input-single-from-beginning:
+	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),--from-beginning)
+
+kafka-consumer-output-single-from-beginning:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_TOPIC),--from-beginning)
+
+
 # Application commands
 load-redis:
 	@echo "Loading data into Redis..."
@@ -186,4 +201,4 @@ spark-app-redis:
 
 spark-app-single:
 	@echo "Running Spark application without Redis..."
-	$(PYTHON) -m sparky.app_full_msg
+	$(PYTHON) -m sparky.app_kafka_only

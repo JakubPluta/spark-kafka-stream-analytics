@@ -7,6 +7,8 @@ from pyspark.sql.types import (
     BooleanType,
     ArrayType,
     MapType,
+    DateType,
+    TimestampType,
 )
 
 AddressSchema = StructType(
@@ -70,7 +72,7 @@ LoanApplicationSchema = StructType(
     [
         StructField("event_id", StringType(), True),
         StructField("customer_id", IntegerType(), True),
-        StructField("timestamp", StringType(), True),
+        StructField("timestamp", TimestampType(), True),
         StructField("application_channel", StringType(), True),  # ApplicationChannel
         StructField("loan_purpose", StringType(), True),  # LoanPurpose
         StructField("requested_amount", FloatType(), True),

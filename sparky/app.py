@@ -200,7 +200,9 @@ def process_batch(batch_df: DataFrame, batch_id: int):
 
     customer_ids = batch_df.select("customer_id").distinct().collect()
     customer_ids = [x.customer_id for x in customer_ids]
-    logger.info(f"Processing batch {batch_id} for customers: :{len(customer_ids)}: {customer_ids}")
+    logger.info(
+        f"Processing batch {batch_id} for customers: :{len(customer_ids)}: {customer_ids}"
+    )
     redis_df = _read_single_customer_from_redis(
         spark=batch_df.sparkSession, customer_id=customer_ids[0]
     )
@@ -212,13 +214,15 @@ def process_batch(batch_df: DataFrame, batch_id: int):
     to_kafka_df = risk_df.select(
         F.col("customer_id").alias("key"), F.to_json(F.struct("*")).alias("value")
     ).selectExpr("CAST(key AS STRING)", "CAST(value AS STRING)")
-    write_to_kafka(to_kafka_df, settings.kafka_output_topic)
+    write_to_kafka(to_kafka_df, settings.kafka_with_redis_output_topic)
 
 
 if __name__ == "__main__":
     spark: SparkSession = get_spark_session()
 
     df: DataFrame = read_kafka_stream(
-        spark=spark, topic=settings.kafka_input_topic, schema=LoanApplicationSchema
+        spark=spark,
+        topic=settings.kafka_with_redis_input_topic,
+        schema=LoanApplicationSchema,
     )
     df.writeStream.foreachBatch(process_batch).start().awaitTermination()

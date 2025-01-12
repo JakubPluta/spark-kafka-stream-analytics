@@ -46,4 +46,4 @@ def run_kafka_producer(topic: str, events_per_second: int = 10) -> None:
 
 
 if __name__ == "__main__":
-    run_kafka_producer(settings.kafka_input_topic, events_per_second=2)
+    run_kafka_producer(settings.kafka_with_redis_input_topic, events_per_second=2)

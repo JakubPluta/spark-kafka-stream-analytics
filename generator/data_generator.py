@@ -157,7 +157,7 @@ class CustomerProfile:
 class LoanApplicationEvent:
     event_id: str
     customer_id: int
-    timestamp: str
+    timestamp: datetime
     application_channel: ApplicationChannel
     loan_purpose: LoanPurpose
     requested_amount: float
@@ -375,7 +375,7 @@ class DataGenerator:
         return LoanApplicationEvent(
             event_id=str(uuid.uuid4()),
             customer_id=customer_id,
-            timestamp=datetime.now().isoformat(),
+            timestamp=datetime.now(),
             application_channel=random.choice(
                 list(x.value for x in ApplicationChannel)
             ),
