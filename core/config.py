@@ -10,5 +10,7 @@ class Settings:
     kafka_only_input_topic: str = "loan-application-events-single"
     kafka_only_output_topic: str = "loan-application-events-processed-single"
 
+    checkpoint_location: str = "/tmp/checkpoints"
+
 
 settings = Settings()

@@ -1,4 +1,5 @@
-from typing import Dict
+from dataclasses import dataclass
+from typing import Dict, Optional, Callable, List, Union
 
 from pyspark.sql import SparkSession, DataFrame, DataFrameWriter
 from pyspark.sql.streaming import StreamingQuery
@@ -7,11 +8,39 @@ from core.config import settings
 from pyspark.sql import functions as F
 
 from sparky.schema import (
-    LoanApplicationSchema,
-    CustomerProfileSchema,
     LoanApplicationSchemaWithCustomerProfile,
 )
 from pyspark.sql.streaming.readwriter import DataStreamReader
+from enum import Enum
+from core.logger import get_logger
+
+logger = get_logger(__name__)
+
+
+class OutputFormat(str, Enum):
+    """Supported output formats for streaming data"""
+
+    KAFKA = "kafka"
+    CONSOLE = "console"
+
+
+@dataclass
+class KafkaOutputConfig:
+    """Configuration for Kafka output"""
+
+    bootstrap_servers: str
+    topic: str
+    checkpoint_location: str
+    output_mode: str = "append"
+    trigger_interval: Optional[str] = "1 minute"
+
+
+@dataclass
+class ConsoleOutputConfig:
+    """Configuration for console output"""
+
+    output_mode: str = "append"
+    truncate: bool = False
 
 
 def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
@@ -25,7 +54,7 @@ def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
         SparkSession: The SparkSession.
     """
 
-    spark = (
+    return (
         SparkSession.builder.appName(app_name)
         .config(
             "spark.jars.packages", "org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.4"
@@ -37,7 +66,6 @@ def get_spark_session(app_name: str = "SparkStreamingApp") -> SparkSession:
         .config("spark.streaming.backpressure.enabled", "true")
         .getOrCreate()
     )
-    return spark
 
 
 def read_kafka_stream(
@@ -54,66 +82,112 @@ def read_kafka_stream(
     Returns:
         pyspark.sql.streaming.DataStreamReader: The DataStreamReader with the deserialized values.
     """
+    try:
+        return (
+            spark.readStream.format("kafka")
+            .option("kafka.bootstrap.servers", settings.kafka_brokers)
+            .option("subscribe", topic)
+            .option("startingOffsets", "earliest")
+            .option("maxOffsetsPerTrigger", 1)
+            .option("failOnDataLoss", "false")
+            .load()
+            .selectExpr("CAST(value AS STRING)")
+            .select(F.from_json(F.col("value"), schema).alias("data"))
+            .select("data.*")
+        )
+    except Exception as e:
+        logger.error(f"Failed to read Kafka stream: {str(e)}")
+        raise
+
+
+def write_to_kafka_stream(
+    df: DataFrame, config: KafkaOutputConfig, query_name: str
+) -> StreamingQuery:
+    """Writes a DataFrame to a Kafka stream
+
+
+    Args:
+        df (DataFrame): The DataFrame to write.
+        config (KafkaOutputConfig): The Kafka output configuration.
+        query_name (str): The name of the query.
+
+    Returns:
+        StreamingQuery: The streaming query object
+    """
+    try:
+        return (
+            df.selectExpr("to_json(struct(*)) AS value")
+            .writeStream.format("kafka")
+            .queryName(query_name)
+            .option("kafka.bootstrap.servers", config.bootstrap_servers)
+            .option("topic", f"{config.topic}-{query_name}")
+            .option("checkpointLocation", f"{config.checkpoint_location}/{query_name}")
+            .outputMode(config.output_mode)
+            .trigger(processingTime=config.trigger_interval)
+            .start()
+        )
+    except Exception as e:
+        logger.error(f"Failed to write to Kafka: {str(e)}")
+        raise
+
+
+def write_streaming_output_to_console(
+    df: DataFrame, name: str, output_mode: str = "append"
+) -> StreamingQuery:
+    """
+    Writes a streaming DataFrame to the console for monitoring.
+
+    Args:
+        df (DataFrame): The streaming DataFrame to write
+        name (str): Name of the stream for identification
+        output_mode (str): Output mode for the stream ("append" or "complete")
+
+    Returns:
+        StreamingQuery: The streaming query object
+    """
     return (
-        spark.readStream.format("kafka")
-        .option("kafka.bootstrap.servers", settings.kafka_brokers)
-        .option("subscribe", topic)
-        .option("startingOffsets", "earliest")
-        .option(
-            "maxOffsetsPerTrigger", 1
-        )  # Only read one message at a time, as we can't read multiple messages from redis later
-        .load()
-        .selectExpr("CAST(value AS STRING)")
-        .select(F.from_json(F.col("value"), schema).alias("data"))
-        .select("data.*")
+        df.writeStream.queryName(name)
+        .outputMode(output_mode)
+        .format("console")
+        .option("truncate", False)
+        .start()
     )
 
 
-def create_risk_analytics_stream(df: DataFrame) -> DataFrame:
-    """
-    Creates a real-time risk analytics stream to monitor high-risk loan applications.
-
-    This function analyzes loan applications for potential risks by monitoring:
-    - High risk assessment scores (> 70)
-    - Large loan amounts (> 50,000)
-    - High debt-to-income ratios (> 0.4)
-
-    The combination of these factors helps identify applications that might need
-    additional review or pose higher risk to the institution.
+def create_risk_analytics_stream(
+    df: DataFrame,
+    risk_score_threshold: float = 65.0,
+    amount_threshold: float = 50000.0,
+    dti_threshold: float = 0.4,
+) -> DataFrame:
+    """Creates risk analytics stream with configurable thresholds
 
     Args:
         df (DataFrame): Input streaming DataFrame with loan application data
+        risk_score_threshold (float, optional): Threshold for risk assessment score. Defaults to 70.0.
+        amount_threshold (float, optional): Threshold for requested amount. Defaults to 50000.0.
+        dti_threshold (float, optional): Threshold for debt-to-income ratio. Defaults to 0.4.
 
     Returns:
-        DataFrame: Filtered stream of high-risk applications
-
-    Example Risk Alert:
-        {
-            "event_id": "uuid",
-            "timestamp": "2024-01-12T10:00:00",
-            "risk_category": "HIGH",
-            "risk_assessment_score": 85,
-            "credit_score": 620,
-            "requested_amount": 150000,
-            "debt_to_income_ratio": 0.6
-        }
+        DataFrame: Risk analytics stream
     """
-
-    risk_analysis = df.select(
-        "event_id",
-        "timestamp",
-        "customer_profile.risk_category",
-        "automated_decision",
-        "risk_assessment_score",
-        "customer_profile.financial_profile.credit_score",
-        "requested_amount",
-        "customer_profile.financial_profile.debt_to_income_ratio",
-    ).withWatermark("timestamp", "1 minute")
-
-    return risk_analysis.filter(
-        (F.col("risk_assessment_score") > 70)
-        & (F.col("requested_amount") > 50000)
-        & (F.col("debt_to_income_ratio") > 0.4)
+    return (
+        df.select(
+            "event_id",
+            "timestamp",
+            "customer_profile.risk_category",
+            "automated_decision",
+            "risk_assessment_score",
+            "customer_profile.financial_profile.credit_score",
+            "requested_amount",
+            "customer_profile.financial_profile.debt_to_income_ratio",
+        )
+        .withWatermark("timestamp", "1 minute")
+        .filter(
+            (F.col("risk_assessment_score") > risk_score_threshold)
+            & (F.col("requested_amount") > amount_threshold)
+            & (F.col("debt_to_income_ratio") > dti_threshold)
+        )
     )
 
 
@@ -155,13 +229,13 @@ def create_fraud_detection_stream(df: DataFrame) -> DataFrame:
         "ip_address",
         "customer_profile.customer_id",
         "geo_location",
-        "application_completion_time"
+        "application_completion_time",
     ).withWatermark("timestamp", "1 minute")
 
     return fraud_detection.filter(
-        (F.col("identity_verification_score") < 0.6) |
-        (F.col("application_completion_time") < 120) |
-        (F.col("fraud_check_result").isin("FLAG", "FAIL"))
+        (F.col("identity_verification_score") < 0.6)
+        | (F.col("application_completion_time") < 120)
+        | (F.col("fraud_check_result").isin("FLAG", "FAIL"))
     )
 
 
@@ -194,21 +268,24 @@ def create_application_statistics_stream(df: DataFrame) -> DataFrame:
             "approved_count": 120
         }
     """
-    return df.select(
-        "timestamp",
-        "application_channel",
-        "requested_amount",
-        "automated_decision",
-        "customer_profile.customer_segment"
-    ).withWatermark("timestamp", "5 minutes") \
-        .groupBy(
-        F.window("timestamp", "5 minutes", "1 minute"),
-        "application_channel"
-    ).agg(
-        F.count("*").alias("total_applications"),
-        F.sum("requested_amount").alias("total_requested_amount"),
-        F.avg("requested_amount").alias("avg_requested_amount"),
-        F.count(F.when(F.col("automated_decision") == "APPROVED", True)).alias("approved_count")
+    return (
+        df.select(
+            "timestamp",
+            "application_channel",
+            "requested_amount",
+            "automated_decision",
+            "customer_profile.customer_segment",
+        )
+        .withWatermark("timestamp", "5 minutes")
+        .groupBy(F.window("timestamp", "5 minutes", "1 minute"), "application_channel")
+        .agg(
+            F.count("*").alias("total_applications"),
+            F.sum("requested_amount").alias("total_requested_amount"),
+            F.avg("requested_amount").alias("avg_requested_amount"),
+            F.count(F.when(F.col("automated_decision") == "APPROVED", True)).alias(
+                "approved_count"
+            ),
+        )
     )
 
 
@@ -240,21 +317,25 @@ def create_segment_analysis_stream(df: DataFrame) -> DataFrame:
             "avg_requested_amount": 500000
         }
     """
-    return df.select(
-        "timestamp",
-        "customer_profile.customer_segment",
-        "requested_amount",
-        "loan_purpose",
-        "customer_profile.financial_profile.credit_score"
-    ).withWatermark("timestamp", "5 minutes") \
+    return (
+        df.select(
+            "timestamp",
+            "customer_profile.customer_segment",
+            "requested_amount",
+            "loan_purpose",
+            "customer_profile.financial_profile.credit_score",
+        )
+        .withWatermark("timestamp", "1 minutes")
         .groupBy(
-        F.window("timestamp", "5 minutes", "1 minute"),
-        "customer_segment",
-        "loan_purpose"
-    ).agg(
-        F.count("*").alias("application_count"),
-        F.avg("credit_score").alias("avg_credit_score"),
-        F.avg("requested_amount").alias("avg_requested_amount")
+            F.window("timestamp", "1 minutes", "30 seconds"),
+            "customer_segment",
+            "loan_purpose",
+        )
+        .agg(
+            F.count("*").alias("application_count"),
+            F.avg("credit_score").alias("avg_credit_score"),
+            F.avg("requested_amount").alias("avg_requested_amount"),
+        )
     )
 
 
@@ -287,99 +368,173 @@ def create_channel_metrics_stream(df: DataFrame) -> DataFrame:
             "total_applications": 200
         }
     """
-    return df.select(
-        "timestamp",
-        "application_channel",
-        "application_completion_time",
-        "number_of_attempts",
-        "automated_decision"
-    ).withWatermark("timestamp", "5 minutes") \
+    return (
+        df.select(
+            "timestamp",
+            "application_channel",
+            "application_completion_time",
+            "number_of_attempts",
+            "automated_decision",
+        )
+        .withWatermark("timestamp", "1 minutes")
         .groupBy(
-        F.window("timestamp", "5 minutes", "1 minute"),
-        "application_channel"
-    ).agg(
-        F.avg("application_completion_time").alias("avg_completion_time"),
-        F.avg("number_of_attempts").alias("avg_attempts"),
-        F.count(F.when(F.col("automated_decision") == "APPROVED", True)).alias("approved_count"),
-        F.count("*").alias("total_applications")
-    ).withColumn(
-        "approval_rate",
-        F.col("approved_count") / F.col("total_applications")
+            F.window("timestamp", "1 minutes", "30 seconds"), "application_channel"
+        )
+        .agg(
+            F.avg("application_completion_time").alias("avg_completion_time"),
+            F.avg("number_of_attempts").alias("avg_attempts"),
+            F.count(F.when(F.col("automated_decision") == "APPROVED", True)).alias(
+                "approved_count"
+            ),
+            F.count("*").alias("total_applications"),
+        )
+        .withColumn(
+            "approval_rate", F.col("approved_count") / F.col("total_applications")
+        )
     )
 
 
-def write_streaming_output_to_console(
-        df: DataFrame,
-        name: str,
-        output_mode: str = "append"
+def write_stream(
+    df: DataFrame,
+    output_format: OutputFormat,
+    query_name: str,
+    output_config: Union[KafkaOutputConfig, ConsoleOutputConfig],
 ) -> StreamingQuery:
     """
-    Writes a streaming DataFrame to the console for monitoring.
-
-    Args:
-        df (DataFrame): The streaming DataFrame to write
-        name (str): Name of the stream for identification
-        output_mode (str): Output mode for the stream ("append" or "complete")
-
-    Returns:
-        StreamingQuery: The streaming query object
+    Write stream to specified output with flexible configuration
     """
-    return df.writeStream \
-        .queryName(name) \
-        .outputMode(output_mode) \
-        .format("console") \
-        .option("truncate", False) \
-        .start()
+    writer = df.writeStream.queryName(query_name)
+
+    try:
+        if output_format == OutputFormat.KAFKA:
+            if not isinstance(output_config, KafkaOutputConfig):
+                raise ValueError("KafkaOutputConfig required for Kafka output")
+
+            logger.info(f"Starting Kafka stream: {query_name}")
+            logger.info(f"Topic: {output_config.topic}")
+            logger.info(f"Checkpoint: {output_config.checkpoint_location}")
+
+            writer = (
+                df.selectExpr("to_json(struct(*)) AS value")
+                .writeStream.format("kafka")
+                .option("kafka.bootstrap.servers", output_config.bootstrap_servers)
+                .option("topic", output_config.topic)
+                .option(
+                    "checkpointLocation",
+                    f"{output_config.checkpoint_location}/{query_name}",
+                )
+                .outputMode(output_config.output_mode)
+                .trigger(processingTime=output_config.trigger_interval)
+            )
+
+        elif output_format == OutputFormat.CONSOLE:
+            if not isinstance(output_config, ConsoleOutputConfig):
+                raise ValueError("ConsoleOutputConfig required for console output")
+
+            logger.info(f"Starting Console stream: {query_name}")
+
+            writer = (
+                df.writeStream.format("console")
+                .option("truncate", output_config.truncate)
+                .outputMode(output_config.output_mode)
+            )
+
+        query = writer.start()
+        logger.info(f"Successfully started stream: {query_name}")
+        return query
+
+    except Exception as e:
+        logger.error(f"Failed to start stream {query_name}: {str(e)}")
+        raise
 
 
-def create_streaming_analytics(df: DataFrame) -> Dict[str, StreamingQuery]:
-    """
-    Creates multiple streaming analytics pipelines for loan application data.
+def main():
+    """Main application entry point"""
+    try:
+        logger.info("Initializing Spark session...")
+        spark: SparkSession = get_spark_session()
 
-    This function sets up five different types of analysis:
-    1. Risk Analytics - Monitoring high-risk applications
-    2. Fraud Detection - Identifying suspicious activities
-    3. Application Statistics - Tracking overall application patterns
-    4. Segment Analysis - Understanding customer segment behavior
-    5. Channel Metrics - Monitoring channel performance
+        output_format = OutputFormat.KAFKA
 
-    Args:
-        df (DataFrame): Input streaming DataFrame with loan application data
+        logger.info("Reading input stream...")
+        input_stream = read_kafka_stream(
+            spark,
+            settings.kafka_only_input_topic,
+            LoanApplicationSchemaWithCustomerProfile,
+        )
 
-    Returns:
-        Dict[str, StreamingQuery]: Dictionary of streaming queries
-    """
-    # Create individual analysis streams
-    risk_alerts = create_risk_analytics_stream(df)
-    suspicious_activities = create_fraud_detection_stream(df)
-    application_stats = create_application_statistics_stream(df)
-    segment_analysis = create_segment_analysis_stream(df)
-    channel_metrics = create_channel_metrics_stream(df)
+        # Define analytics streams
+        logger.info("Creating analytics streams...")
+        analytics_streams = {
+            "risk_analytics": create_risk_analytics_stream(input_stream),
+            "fraud_detection": create_fraud_detection_stream(input_stream),
+            "application_stats": create_application_statistics_stream(input_stream),
+        }
 
-    # Write streams to output
-    queries = {
-        "risk_alerts": write_streaming_output_to_console(risk_alerts, "risk_alerts"),
-        "suspicious_activities": write_streaming_output_to_console(suspicious_activities, "suspicious_activities"),
-        "application_stats": write_streaming_output_to_console(application_stats, "application_stats", "complete"),
-        "segment_analysis": write_streaming_output_to_console(segment_analysis, "segment_analysis", "complete"),
-        "channel_metrics": write_streaming_output_to_console(channel_metrics, "channel_metrics", "complete")
-    }
+        # Define output topics
+        topic_prefix = "loan-application-events-processed-single"
 
-    return queries
+        logger.info(f"Configuring Kafka with topic prefix: {topic_prefix}")
+        kafka_configs = {
+            "risk_analytics": KafkaOutputConfig(
+                bootstrap_servers=settings.kafka_brokers,
+                topic=f"{topic_prefix}_risk",
+                checkpoint_location=f"{settings.checkpoint_location}/risk",
+            ),
+            "fraud_detection": KafkaOutputConfig(
+                bootstrap_servers=settings.kafka_brokers,
+                topic=f"{topic_prefix}_fraud",
+                checkpoint_location=f"{settings.checkpoint_location}/fraud",
+            ),
+            "application_stats": KafkaOutputConfig(
+                bootstrap_servers=settings.kafka_brokers,
+                topic=f"{topic_prefix}_stats",
+                checkpoint_location=f"{settings.checkpoint_location}/stats",
+            ),
+        }
 
+        console_config = ConsoleOutputConfig(output_mode="append", truncate=False)
+
+        logger.info("Starting all streams...")
+        queries = []
+
+        # Start each stream individually with better error handling
+        for stream_name, stream_df in analytics_streams.items():
+            try:
+                if output_format == OutputFormat.KAFKA:
+                    logger.info(f"Starting Console stream for {stream_name}")
+                    kafka_query = write_stream(
+                        stream_df,
+                        OutputFormat.KAFKA,
+                        f"{stream_name}_kafka",
+                        kafka_configs[stream_name],
+                    )
+                    queries.append(kafka_query)
+                else:
+                    # Console output
+                    logger.info(f"Starting Console stream for {stream_name}")
+                    console_query = write_stream(
+                        stream_df,
+                        OutputFormat.CONSOLE,
+                        f"{stream_name}_console",
+                        console_config,
+                    )
+                    queries.append(console_query)
+
+            except Exception as e:
+                logger.error(f"Failed to start {stream_name} streams: {str(e)}")
+                # Continue with other streams even if one fails
+                continue
+
+        logger.info(f"Successfully started {len(queries)} streams")
+
+        # Wait for termination
+        spark.streams.awaitAnyTermination()
+
+    except Exception as e:
+        logger.error(f"Application failed: {str(e)}")
+        raise
 
 
 if __name__ == "__main__":
-    spark: SparkSession = get_spark_session()
-
-    df: DataFrame = read_kafka_stream(
-        spark=spark,
-        topic=settings.kafka_with_redis_input_topic,
-        schema=LoanApplicationSchemaWithCustomerProfile,
-    )
-
-    queries = create_streaming_analytics(df)
-
-    # Wait for all queries to terminate
-    for query in queries.values():
-        query.awaitTermination()
+    main()
