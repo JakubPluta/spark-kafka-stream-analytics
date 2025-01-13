@@ -17,6 +17,15 @@ from core.logger import get_logger
 logger = get_logger(__name__)
 
 
+class KafkaOutputTopics:
+    BASE_OUTPUT_TOPIC = "stream-loan-events-processed"
+    RISK_OUTPUT_TOPIC = f"{BASE_OUTPUT_TOPIC}-risk"
+    FRAUD_OUTPUT_TOPIC = f"{BASE_OUTPUT_TOPIC}-fraud"
+    STATS_OUTPUT_TOPIC = f"{BASE_OUTPUT_TOPIC}-stats"
+    SEGMENT_OUTPUT_TOPIC = f"{BASE_OUTPUT_TOPIC}-segment"
+    CHANNEL_OUTPUT_TOPIC = f"{BASE_OUTPUT_TOPIC}-channel"
+
+
 class OutputFormat(str, Enum):
     """Supported output formats for streaming data"""
 
@@ -33,6 +42,13 @@ class KafkaOutputConfig:
     checkpoint_location: str
     output_mode: str = "append"
     trigger_interval: Optional[str] = "1 minute"
+
+    def __repr__(self):
+        return (
+            f"KafkaOutputConfig(bootstrap_servers='{self.bootstrap_servers}', "
+            f"topic='{self.topic}', checkpoint_location='{self.checkpoint_location}', "
+            f"output_mode='{self.output_mode}', trigger_interval='{self.trigger_interval}')"
+        )
 
 
 @dataclass
@@ -276,8 +292,8 @@ def create_application_statistics_stream(df: DataFrame) -> DataFrame:
             "automated_decision",
             "customer_profile.customer_segment",
         )
-        .withWatermark("timestamp", "5 minutes")
-        .groupBy(F.window("timestamp", "5 minutes", "1 minute"), "application_channel")
+        .withWatermark("timestamp", "1 minutes")
+        .groupBy(F.window("timestamp", "1 minutes", "30 seconds"), "application_channel")
         .agg(
             F.count("*").alias("total_applications"),
             F.sum("requested_amount").alias("total_requested_amount"),
@@ -469,30 +485,39 @@ def main():
             "risk_analytics": create_risk_analytics_stream(input_stream),
             "fraud_detection": create_fraud_detection_stream(input_stream),
             "application_stats": create_application_statistics_stream(input_stream),
+            "segment_analysis": create_segment_analysis_stream(input_stream),
+            "channel_metrics": create_channel_metrics_stream(input_stream),
         }
 
         # Define output topics
-        topic_prefix = "loan-application-events-processed-single"
-
-        logger.info(f"Configuring Kafka with topic prefix: {topic_prefix}")
         kafka_configs = {
             "risk_analytics": KafkaOutputConfig(
                 bootstrap_servers=settings.kafka_brokers,
-                topic=f"{topic_prefix}_risk",
+                topic=KafkaOutputTopics.RISK_OUTPUT_TOPIC,
                 checkpoint_location=f"{settings.checkpoint_location}/risk",
             ),
             "fraud_detection": KafkaOutputConfig(
                 bootstrap_servers=settings.kafka_brokers,
-                topic=f"{topic_prefix}_fraud",
+                topic=KafkaOutputTopics.FRAUD_OUTPUT_TOPIC,
                 checkpoint_location=f"{settings.checkpoint_location}/fraud",
             ),
             "application_stats": KafkaOutputConfig(
                 bootstrap_servers=settings.kafka_brokers,
-                topic=f"{topic_prefix}_stats",
+                topic=KafkaOutputTopics.STATS_OUTPUT_TOPIC,
                 checkpoint_location=f"{settings.checkpoint_location}/stats",
             ),
+            "segment_analysis": KafkaOutputConfig(
+                bootstrap_servers=settings.kafka_brokers,
+                topic=KafkaOutputTopics.SEGMENT_OUTPUT_TOPIC,
+                checkpoint_location=f"{settings.checkpoint_location}/segment",
+            ),
+            "channel_metrics": KafkaOutputConfig(
+                bootstrap_servers=settings.kafka_brokers,
+                topic=KafkaOutputTopics.CHANNEL_OUTPUT_TOPIC,
+                checkpoint_location=f"{settings.checkpoint_location}/channel",
+            ),
         }
-
+        logger.info("Configured Kafka configs: {}".format(kafka_configs))
         console_config = ConsoleOutputConfig(output_mode="append", truncate=False)
 
         logger.info("Starting all streams...")

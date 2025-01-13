@@ -10,8 +10,13 @@ KAFKA_CREATE_TOPICS_TIMEOUT=15
 APP_WITH_REDIS_INPUT_TOPIC=loan-application-events
 APP_WITH_REDIS_OUTPUT_TOPIC=loan-application-events-processed
 # only kafka project
-APP_ONLY_KAFKA_INPUT_TOPIC=loan-application-events-single
-APP_ONLY_KAFKA_OUTPUT_TOPIC=loan-application-events-processed-single
+APP_ONLY_KAFKA_INPUT_TOPIC=stream-loan-events
+APP_ONLY_KAFKA_OUTPUT_TOPIC=stream-loan-events-processed
+APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC=stream-loan-events-processed-risk
+APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC=stream-loan-events-processed-fraud
+APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC=stream-loan-events-processed-stats
+APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC=stream-loan-events-processed-segment
+APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC=stream-loan-events-processed-channel
 
 # Docker and environment settings
 DOCKER_COMPOSE_FILE=docker-compose.yaml
@@ -128,6 +133,21 @@ kafka-create-input-single-topic:
 kafka-create-output-single-topic:
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_TOPIC))
 
+kafka-create-output-risk-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
+
+kafka-create-output-fraud-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
+
+kafka-create-output-stats-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
+
+kafka-create-output-segment-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
+
+kafka-create-output-channel-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
+
 
 kafka-delete-input-redis-topic:
 	$(call delete_topic,$(APP_WITH_REDIS_INPUT_TOPIC))
@@ -141,10 +161,25 @@ kafka-delete-input-single-topic:
 kafka-delete-output-single-topic:
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_TOPIC))
 
-# Grouped commands
-kafka-create: kafka-create-input-redis-topic kafka-create-output-redis-topic kafka-create-input-single-topic kafka-create-output-single-topic
+kafka-delete-output-risk-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
 
-kafka-delete: kafka-delete-input-redis-topic kafka-delete-output-redis-topic kafka-delete-input-single-topic kafka-delete-output-single-topic
+kafka-delete-output-fraud-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
+
+kafka-delete-output-stats-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
+
+kafka-delete-output-segment-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
+
+kafka-delete-output-channel-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
+
+# Grouped commands
+kafka-create: kafka-create-input-redis-topic kafka-create-output-redis-topic kafka-create-input-single-topic kafka-create-output-single-topic kafka-create-output-risk-topic kafka-create-output-fraud-topic kafka-create-output-stats-topic kafka-create-output-segment-topic
+
+kafka-delete: kafka-delete-input-redis-topic kafka-delete-output-redis-topic kafka-delete-input-single-topic kafka-delete-output-single-topic kafka-delete-output-risk-topic kafka-delete-output-fraud-topic kafka-delete-output-stats-topic kafka-delete-output-segment-topic
 
 kafka-recreate: kafka-delete kafka-create
 
@@ -172,14 +207,21 @@ kafka-consumer-output-redis-from-beginning:
 kafka-consumer-input-single:
 	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),)
 
-kafka-consumer-output-single:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_TOPIC),)
-
 kafka-consumer-input-single-from-beginning:
 	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),--from-beginning)
 
-kafka-consumer-output-single-from-beginning:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_TOPIC),--from-beginning)
+
+kafka-consumer-output-risk:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC),)
+
+kafka-consumer-output-fraud:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC),)
+
+kafka-consumer-output-stats:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC),)
+
+kafka-consumer-output-segment:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC),)
 
 
 # Application commands
