@@ -55,8 +55,8 @@ dimensions including risk assessment, fraud detection, application statistics, c
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/JakubPluta/streamer
-cd streamer
+git clone https://github.com/JakubPluta/spark-kafka-stream-analytics
+cd spark-kafka-stream-analytics
 ```
 
 2. **Instal uv**
