@@ -116,60 +116,6 @@ def read_kafka_stream(
         raise
 
 
-def write_to_kafka_stream(
-    df: DataFrame, config: KafkaOutputConfig, query_name: str
-) -> StreamingQuery:
-    """Writes a DataFrame to a Kafka stream
-
-
-    Args:
-        df (DataFrame): The DataFrame to write.
-        config (KafkaOutputConfig): The Kafka output configuration.
-        query_name (str): The name of the query.
-
-    Returns:
-        StreamingQuery: The streaming query object
-    """
-    try:
-        return (
-            df.selectExpr("to_json(struct(*)) AS value")
-            .writeStream.format("kafka")
-            .queryName(query_name)
-            .option("kafka.bootstrap.servers", config.bootstrap_servers)
-            .option("topic", f"{config.topic}-{query_name}")
-            .option("checkpointLocation", f"{config.checkpoint_location}/{query_name}")
-            .outputMode(config.output_mode)
-            .trigger(processingTime=config.trigger_interval)
-            .start()
-        )
-    except Exception as e:
-        logger.error(f"Failed to write to Kafka: {str(e)}")
-        raise
-
-
-def write_streaming_output_to_console(
-    df: DataFrame, name: str, output_mode: str = "append"
-) -> StreamingQuery:
-    """
-    Writes a streaming DataFrame to the console for monitoring.
-
-    Args:
-        df (DataFrame): The streaming DataFrame to write
-        name (str): Name of the stream for identification
-        output_mode (str): Output mode for the stream ("append" or "complete")
-
-    Returns:
-        StreamingQuery: The streaming query object
-    """
-    return (
-        df.writeStream.queryName(name)
-        .outputMode(output_mode)
-        .format("console")
-        .option("truncate", False)
-        .start()
-    )
-
-
 def create_risk_analytics_stream(
     df: DataFrame,
     risk_score_threshold: float = 65.0,

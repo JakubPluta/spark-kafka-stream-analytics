@@ -7,11 +7,12 @@ KAFKA_CREATE_TOPICS_TIMEOUT=15
 
 # Application settings
 # kafka with redis project
-APP_WITH_REDIS_INPUT_TOPIC=loan-application-events
-APP_WITH_REDIS_OUTPUT_TOPIC=loan-application-events-processed
+APP_WITH_REDIS_INPUT_TOPIC=loan-application-with-redis-events
+APP_WITH_REDIS_OUTPUT_TOPIC=loan-application-with-redis-events-processed
+
+
 # only kafka project
 APP_ONLY_KAFKA_INPUT_TOPIC=stream-loan-events
-APP_ONLY_KAFKA_OUTPUT_TOPIC=stream-loan-events-processed
 APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC=stream-loan-events-processed-risk
 APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC=stream-loan-events-processed-fraud
 APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC=stream-loan-events-processed-stats
@@ -22,6 +23,46 @@ APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC=stream-loan-events-processed-channel
 DOCKER_COMPOSE_FILE=docker-compose.yaml
 PYTHON=python
 
+# functions
+define topic_exists
+	$(shell docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --list | grep -x $(1) > /dev/null && echo 1 || echo 0)
+endef
+
+define create_topic
+	@echo "Creating/verifying Kafka topic: $(1)..."
+	@if [ $(call topic_exists,$(1)) = 1 ]; then \
+		echo "Topic $(1) already exists, skipping creation."; \
+	else \
+		docker exec $(KAFKA_CONTAINER) kafka-topics \
+			--bootstrap-server $(BOOTSTRAP_SERVER) \
+			--create \
+			--topic $(1) \
+			--partitions $(PARTITIONS) 2>&1 | grep -v "already exists" || true; \
+	fi
+endef
+
+define delete_topic
+	@echo "Checking and deleting Kafka topic: $(1)..."
+	@if [ $(call topic_exists,$(1)) = 1 ]; then \
+		echo "Deleting topic $(1)..."; \
+		docker exec $(KAFKA_CONTAINER) kafka-topics \
+			--bootstrap-server $(BOOTSTRAP_SERVER) \
+			--delete \
+			--topic $(1) || \
+		(echo "Failed to delete topic $(1)" && exit 1); \
+	else \
+		echo "Topic $(1) does not exist, skipping deletion."; \
+	fi
+endef
+
+# Consumer commands with enhanced options
+define start_consumer
+	@echo "Starting Kafka consumer for topic: $(1)..."
+	docker exec $(KAFKA_CONTAINER) kafka-console-consumer \
+		--bootstrap-server $(BOOTSTRAP_SERVER) \
+		--topic $(1) \
+		$(2)
+endef
 
 .PHONY: all up down clean kafka-* spark-* load-redis help
 
@@ -59,7 +100,7 @@ up:
 	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 	@echo "Waiting for services to be ready..."
 	sleep 5
-	$(MAKE) kafka-create
+	#$(MAKE) kafka-create
 
 down:
 	@echo "Stopping Docker Compose services..."
@@ -82,72 +123,14 @@ kafka-delete-all:
 	@echo "Deleting all Kafka topics..."
 	docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --delete --topic '.*' || true
 
-define topic_exists
-	$(shell docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --list | grep -x $(1) > /dev/null && echo 1 || echo 0)
-endef
-
-test_topic_exists:
-	@echo "Topic exists: $(call topic_exists,$(APP_WITH_REDIS_OUTPUT_TOPIC))"
-
-
-# Enhanced topic creation with configuration
-define create_topic
-	@echo "Creating/verifying Kafka topic: $(1)..."
-	@if [ $(call topic_exists,$(1)) = 1 ]; then \
-		echo "Topic $(1) already exists, skipping creation."; \
-	else \
-		docker exec $(KAFKA_CONTAINER) kafka-topics \
-			--bootstrap-server $(BOOTSTRAP_SERVER) \
-			--create \
-			--topic $(1) \
-			--partitions $(PARTITIONS) 2>&1 | grep -v "already exists" || true; \
-	fi
-endef
-
-# delete topic
-
-
-define delete_topic
-	@echo "Checking and deleting Kafka topic: $(1)..."
-	@if [ $(call topic_exists,$(1)) = 1 ]; then \
-		echo "Deleting topic $(1)..."; \
-		docker exec $(KAFKA_CONTAINER) kafka-topics \
-			--bootstrap-server $(BOOTSTRAP_SERVER) \
-			--delete \
-			--topic $(1) || \
-		(echo "Failed to delete topic $(1)" && exit 1); \
-	else \
-		echo "Topic $(1) does not exist, skipping deletion."; \
-	fi
-endef
-
+# ------------------------------------------------------------------------------|
+# Application with Redis:														|
+# ------------------------------------------------------------------------------|
 kafka-create-input-redis-topic:
 	$(call create_topic,$(APP_WITH_REDIS_INPUT_TOPIC))
 
 kafka-create-output-redis-topic:
 	$(call create_topic,$(APP_WITH_REDIS_OUTPUT_TOPIC))
-
-kafka-create-input-single-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
-
-kafka-create-output-single-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_TOPIC))
-
-kafka-create-output-risk-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
-
-kafka-create-output-fraud-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
-
-kafka-create-output-stats-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
-
-kafka-create-output-segment-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
-
-kafka-create-output-channel-topic:
-	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
-
 
 kafka-delete-input-redis-topic:
 	$(call delete_topic,$(APP_WITH_REDIS_INPUT_TOPIC))
@@ -155,92 +138,87 @@ kafka-delete-input-redis-topic:
 kafka-delete-output-redis-topic:
 	$(call delete_topic,$(APP_WITH_REDIS_OUTPUT_TOPIC))
 
-kafka-delete-input-single-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
-
-kafka-delete-output-single-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_TOPIC))
-
-kafka-delete-output-risk-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
-
-kafka-delete-output-fraud-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
-
-kafka-delete-output-stats-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
-
-kafka-delete-output-segment-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
-
-kafka-delete-output-channel-topic:
-	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
-
-# Grouped commands
-kafka-create: kafka-create-input-redis-topic kafka-create-output-redis-topic kafka-create-input-single-topic kafka-create-output-single-topic kafka-create-output-risk-topic kafka-create-output-fraud-topic kafka-create-output-stats-topic kafka-create-output-segment-topic
-
-kafka-delete: kafka-delete-input-redis-topic kafka-delete-output-redis-topic kafka-delete-input-single-topic kafka-delete-output-single-topic kafka-delete-output-risk-topic kafka-delete-output-fraud-topic kafka-delete-output-stats-topic kafka-delete-output-segment-topic
-
-kafka-recreate: kafka-delete kafka-create
-
-# Consumer commands with enhanced options
-define start_consumer
-	@echo "Starting Kafka consumer for topic: $(1)..."
-	docker exec $(KAFKA_CONTAINER) kafka-console-consumer \
-		--bootstrap-server $(BOOTSTRAP_SERVER) \
-		--topic $(1) \
-		$(2)
-endef
-
 kafka-consumer-input-redis:
 	$(call start_consumer,$(APP_WITH_REDIS_INPUT_TOPIC),)
 
 kafka-consumer-output-redis:
 	$(call start_consumer,$(APP_WITH_REDIS_OUTPUT_TOPIC),)
 
-kafka-consumer-input-redis-from-beginning:
-	$(call start_consumer,$(APP_WITH_REDIS_INPUT_TOPIC),--from-beginning)
+# group commands
+kafka-create-kafka-redis: kafka-create-input-redis-topic kafka-create-output-redis-topic
+kafka-delete-kafka-redis: kafka-delete-input-redis-topic kafka-delete-output-redis-topic
+kafka-recreate-kafka-redis: kafka-delete-kafka-redis kafka-create-kafka-redis
 
-kafka-consumer-output-redis-from-beginning:
-	$(call start_consumer,$(APP_WITH_REDIS_OUTPUT_TOPIC),--from-beginning)
-
-kafka-consumer-input-single:
-	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),)
-
-kafka-consumer-input-single-from-beginning:
-	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),--from-beginning)
-
-
-kafka-consumer-output-risk:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC),)
-
-kafka-consumer-output-fraud:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC),)
-
-kafka-consumer-output-stats:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC),)
-
-kafka-consumer-output-segment:
-	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC),)
-
-
-# Application commands
+# redis data loader - use at the beginning
 load-redis:
-	@echo "Loading data into Redis..."
+	@echo "Loading data into Redis... redis_loader.loader.py"
 	$(PYTHON) -m redis_loader.loader
 
+# kafka producer
 kafka-producer-redis:
-	@echo "Running Kafka producer with Redis..."
-	$(PYTHON) -m kafka_producer.run_simple_producer
+	@echo "Running Kafka producer with Redis... kafka_producer.run_kafka_with_redis_data_producer.py"
+	$(PYTHON) -m kafka_producer.run_kafka_with_redis_data_producer
 
-kafka-producer-single:
-	@echo "Running Kafka producer without Redis..."
-	$(PYTHON) -m kafka_producer.run_full_msg_producer
-
+# spark app
 spark-app-redis:
-	@echo "Running Spark application with Redis..."
-	$(PYTHON) -m sparky.app
+	@echo "Running Spark application with Redis... sparky.app_kafka_with_redis.py"
+	$(PYTHON) -m sparky.app_kafka_with_redis
 
-spark-app-single:
-	@echo "Running Spark application without Redis..."
+
+# ------------------------------------------------------------------------------|
+# Application with Kafka Only:													|
+# ------------------------------------------------------------------------------|
+kafka-create-input-only-kafka-topic:
+	$(call create_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
+
+kafka-create-output-kafka-only-topics:
+	@echo "Creating ... $(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC)"
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
+	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
+
+
+kafka-delete-input-only-kafka-topic:
+	$(call delete_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
+
+kafka-delete-output-only-kafka-topics:
+	@echo "Deleting Kafka topics... $(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC)"
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
+	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
+
+
+kafka-create-kafka-only: kafka-create-input-only-kafka-topic kafka-create-output-kafka-only-topics
+kafka-delete-kafka-only: kafka-delete-input-only-kafka-topic kafka-delete-output-only-kafka-topics
+kafka-recreate-kafka-only: kafka-delete-kafka-only kafka-create-kafka-only
+
+kafka-consumer-input-only-kafka:
+	$(call start_consumer,$(APP_ONLY_KAFKA_INPUT_TOPIC),)
+
+kafka-consumer-output-only-kafka-risk:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC),)
+
+kafka-consumer-output-only-kafka-fraud:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC),)
+
+kafka-consumer-output-only-kafka-stats:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC),)
+
+kafka-consumer-output-only-kafka-segment:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC),)
+
+kafka-consumer-output-only-kafka-channel:
+	$(call start_consumer,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC),)
+
+# application
+kafka-producer-kafka-only:
+	@echo "Running Kafka producer with Kafka Only: kafka_producer.run_kafka_only_data_producer."
+	$(PYTHON) -m kafka_producer.run_kafka_only_data_producer
+
+spark-app-kafka-only:
+	@echo "Running Spark application with Kafka Only: sparky.app_kafka_only.py"
 	$(PYTHON) -m sparky.app_kafka_only
