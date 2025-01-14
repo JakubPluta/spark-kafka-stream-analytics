@@ -1,73 +1,55 @@
 # Loan Application Streaming Analytics Project
 
 ## Overview
-This project implements a real-time streaming analytics system for loan applications using Apache Spark Structured Streaming and Apache Kafka. The system processes loan application events, performs various analyses, and produces insights across multiple dimensions including risk assessment, fraud detection, application statistics, customer segmentation, and channel performance.
+This project implements a real-time streaming analytics system for loan applications using Apache Spark Structured Streaming 
+and Apache Kafka. 
 
-## Architecture
-```
-                                    ┌─────────────────────┐
-                                    │     Risk Analytics  │
-                                    └─────────────────────┘
-┌──────────────┐    ┌──────────┐    ┌─────────────────────┐
-│  Data        │    │  Kafka   │    │   Fraud Detection   │
-│  Generator   │───>│  Topics  │───>│                     │
-└──────────────┘    └──────────┘    └─────────────────────┘
-                                    ┌─────────────────────┐
-                                    │      Statistics     │
-                                    └─────────────────────┘
-                                    ┌─────────────────────┐
-                                    │ Channel Performance │
-                                    └─────────────────────┘
-```
+There are two application examples:
 
-## Features
+### Kafka Stream + Redis Feature Store
+Customer data is stored in Redis, loan application events are stored in Kafka. The system processes loan application events and joins them with customer data stored in Redis. Base on this data it performs risk assessment and store results in Kafka
 
-### Data Generation
+#### Data Generation
+- Realistic loan application data generation using Faker
+- Comprehensive customer profiles including stored in Redis:
+  - Personal information
+  - Financial metrics
+  - Behavioral data
+  - Risk assessments
+
+##### Stream Processing
+- Reads loan application data from Kafka in real-time. 
+- Enriches data with customer profiles stored in Redis. 
+- Analyzes customer risk profiles based on financial and behavioral metrics. 
+- Computes aggregated metrics like average risk scores, approval rates, and churn risk.
+
+### Kafka Stream Only 
+The system processes loan application events, performs various analyses, and produces insights across multiple 
+dimensions including risk assessment, fraud detection, application statistics, customer segmentation, and channel performance and store data on 5 Kafka topics
+
+#### Data Generation
 - Realistic loan application data generation using Faker
 - Comprehensive customer profiles including:
   - Personal information
   - Financial metrics
   - Behavioral data
   - Risk assessments
-- Configurable event generation rate
 
-### Stream Processing
+
+##### Stream Processing
 1. **Risk Analytics**
-   - Real-time risk scoring
-   - Threshold-based alerts
-   - Debt-to-income ratio analysis
-   - Credit score evaluation
-
 2. **Fraud Detection**
-   - Identity verification scoring
-   - Application behavior analysis
-   - Suspicious pattern detection
-   - Real-time fraud alerts
-
 3. **Application Statistics**
-   - Application volumes by channel
-   - Approval rates
-   - Average loan amounts
-   - Processing time metrics
-
 4. **Customer Segmentation**
-   - Segment-based analysis
-   - Borrowing patterns
-   - Credit score distribution
-   - Product preferences
-
 5. **Channel Performance**
-   - Channel-specific metrics
-   - Conversion rates
-   - User experience metrics
-   - Technical performance data
+
+
 
 ## Prerequisites
 - Docker and Docker Compose
 - Python 3.12+
-- Apache Kafka
-- Apache Spark 3.5.4
 - Make
+- UV
 
 ## Installation
 
@@ -93,13 +75,16 @@ source .venv/bin/activate
 uv sync
 ```
 
-## Configuration
+## Structure
 
-Key configuration files:
-- `docker-compose.yaml`: Container configuration
-- `core/config.py`: Application settings
-- `sparky/schema.py`: Data schemas
-- `Makefile`: Build and run commands
+```bash
+.
+├── core/                   # Core configurations and utilities
+├── generator/             # Synthetic data generation
+├── kafka_producer/        # Kafka producer implementation
+├── sparky/               # Spark streaming application
+└── Makefile              # Build and management commands
+```
 
 ## Usage
 
@@ -112,128 +97,92 @@ make up
 make kafka-list
 ```
 
-### Running the Application
+## Running the Application
+
+### Kafka + Redis Application
+
+### Kafka Only Application
 
 1. **Start the Data Generator**
 ```bash
-# Run the Kafka producer
-make kafka-producer-single
+# Load data into Redis
+make load-redis
+
+# After loading data, Run the Kafka producer
+make kafka-producer-redis
 ```
 
 2. **Launch the Spark Application**
 ```bash
 # Start the streaming analytics
-make spark-app-single
+make spark-app-redis
 ```
 
 3. **Monitor the Output**
 ```bash
-# View risk analytics
-make kafka-consumer-output-risk
-
-# View fraud detection
-make kafka-consumer-output-fraud
-
-# View statistics
-make kafka-consumer-output-stats
-
-# View segmentation analysis
-make kafka-consumer-output-segment
-
-# View channel metrics
-make kafka-consumer-output-channel
+# Risk analytics stream
+make kafka-consumer-output-redis
 ```
 
-### Stopping the Application
+
+### Kafka Only Application
+
+1. **Start the Data Generator**
 ```bash
-# Stop all services
-make down
+# Run the Kafka producer
+make kafka-producer-kafka-only
 ```
 
-## Makefile Commands
-
-### Environment Management
-- `make up`: Start all services
-- `make down`: Stop all services
-- `make clean`: Clean temporary files
-
-### Kafka Management
-- `make kafka-list`: List all topics
-- `make kafka-delete-all`: Delete all topics
-- `make kafka-recreate`: Recreate all topics
-- `make kafka-consumer-*`: Start various consumers
-
-### Application Commands
-- `make kafka-producer-single`: Run data generator
-- `make spark-app-single`: Run analytics application
-
-## Development
-
-### Project Structure
-```
-loan-application-analytics/
-├── core/                   # Core configuration and utilities
-├── generator/              # Data generation logic
-├── kafka_producer/         # Kafka producer implementation
-├── sparky/                # Spark streaming application
-├── docker-compose.yaml    # Docker configuration
-├── Makefile              # Build and run commands
-└── uv.lock               # Python dependencies
+2. **Launch the Spark Application**
+```bash
+# Start the streaming analytics
+make spark-app-kafka-only
 ```
 
-### Key Components
+3. **Monitor the Output**
+```bash
+# Risk analytics stream
+make kafka-consumer-output-only-kafka-risk
 
-1. **Data Generator (`generator/data_generator.py`)**
-   - Generates realistic loan application data
-   - Creates customer profiles
-   - Simulates application events
+# Fraud detection stream
+make kafka-consumer-output-only-kafka-fraud
 
-2. **Kafka Producer (`kafka_producer/`)**
-   - Handles event serialization
-   - Manages Kafka connectivity
-   - Controls event production rate
+# Application statistics stream
+make kafka-consumer-output-only-kafka-stats
 
-3. **Spark Application (`sparky/app_kafka_only.py`)**
-   - Implements stream processing logic
-   - Manages multiple analysis streams
-   - Handles output production
+# Customer segment analysis stream
+make kafka-consumer-output-only-kafka-segment
 
-## Monitoring and Maintenance
+# Channel metrics stream
+make kafka-consumer-output-only-kafka-channel
+```
 
-### Logging
-- Application logs are available in the container logs
-- Each component has its own logger configuration
-- Use `docker logs` to view container logs
 
-### Performance Tuning
-- Adjust Spark configurations in `get_spark_session()`
-- Modify Kafka settings in producer configuration
-- Configure stream processing parameters in analysis functions
+## Make Commands
 
-## Troubleshooting
+```bash
 
-Common Issues:
-1. **Kafka Connection Issues**
-   - Verify Kafka container is running
-   - Check broker configuration
-   - Ensure topics are created
+# Environment management
+make up              # Start all services
+make down            # Stop all services
+make clean           # Clean up temporary files
 
-2. **Spark Processing Delays**
-   - Monitor trigger intervals
-   - Check resource allocation
-   - Verify backpressure settings
+# Kafka management
+make kafka-list      # List all Kafka topics
+make kafka-create-all # Create all Kafka topics
+make kafka-delete-all # Delete all Kafka topics
+make kafka-recreate-all # Recreate all Kafka topics
 
-3. **Data Quality Issues**
-   - Review schema definitions
-   - Check data generator configuration
-   - Validate transformation logic
+# Application
+make kafka-producer-kafka-only  # Run Kafka producer
+make spark-app-kafka-only      # Run Spark application
 
-## Contributing
-1. Fork the repository
-2. Create a feature branch
-3. Commit changes
-4. Push to the branch
-5. Create a Pull Request
+# Output Consumer
+make kafka-consumer-input-only-kafka
+make kafka-consumer-output-only-kafka-risk
+make kafka-consumer-output-only-kafka-fraud
+make kafka-consumer-output-only-kafka-stats
+make kafka-consumer-output-only-kafka-segment
+make kafka-consumer-output-only-kafka-channel
+```
 
-## License
-[Specify your license here]

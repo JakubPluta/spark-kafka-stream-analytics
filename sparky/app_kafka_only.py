@@ -144,7 +144,7 @@ def create_risk_analytics_stream(
             "requested_amount",
             "customer_profile.financial_profile.debt_to_income_ratio",
         )
-        .withWatermark("timestamp", "1 minute")
+        .withWatermark("timestamp", "30 seconds")
         .filter(
             (F.col("risk_assessment_score") > risk_score_threshold)
             & (F.col("requested_amount") > amount_threshold)
@@ -192,11 +192,11 @@ def create_fraud_detection_stream(df: DataFrame) -> DataFrame:
         "customer_profile.customer_id",
         "geo_location",
         "application_completion_time",
-    ).withWatermark("timestamp", "1 minute")
+    ).withWatermark("timestamp", "30 seconds")
 
     return fraud_detection.filter(
-        (F.col("identity_verification_score") < 0.6)
-        | (F.col("application_completion_time") < 120)
+        (F.col("identity_verification_score") < 0.5)
+        | (F.col("application_completion_time") < 110)
         | (F.col("fraud_check_result").isin("FLAG", "FAIL"))
     )
 
@@ -330,7 +330,15 @@ def create_channel_metrics_stream(df: DataFrame) -> DataFrame:
             "total_applications": 200
         }
     """
-    return (
+    # Watermark to handle late data
+    watermark_duration = "1 minutes"
+
+    # Define the window duration and slide interval
+    window_duration = "30 seconds"
+    slide_interval = "30 seconds"
+
+    # Group by window and application channel
+    metrics_df = (
         df.select(
             "timestamp",
             "application_channel",
@@ -338,9 +346,10 @@ def create_channel_metrics_stream(df: DataFrame) -> DataFrame:
             "number_of_attempts",
             "automated_decision",
         )
-        .withWatermark("timestamp", "1 minutes")
+        .withWatermark("timestamp", watermark_duration)
         .groupBy(
-            F.window("timestamp", "1 minutes", "30 seconds"), "application_channel"
+            F.window("timestamp", window_duration, slide_interval),
+            "application_channel",
         )
         .agg(
             F.avg("application_completion_time").alias("avg_completion_time"),
@@ -351,9 +360,15 @@ def create_channel_metrics_stream(df: DataFrame) -> DataFrame:
             F.count("*").alias("total_applications"),
         )
         .withColumn(
-            "approval_rate", F.col("approved_count") / F.col("total_applications")
+            "approval_rate",
+            F.when(
+                F.col("total_applications") > 0,
+                F.col("approved_count") / F.col("total_applications"),
+            ).otherwise(0.0),
         )
     )
+
+    return metrics_df
 
 
 def write_stream(
@@ -386,7 +401,6 @@ def write_stream(
                     f"{output_config.checkpoint_location}/{query_name}",
                 )
                 .outputMode(output_config.output_mode)
-                .trigger(processingTime=output_config.trigger_interval)
             )
 
         elif output_format == OutputFormat.CONSOLE:

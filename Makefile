@@ -3,13 +3,12 @@ KAFKA_CONTAINER=kafka
 BOOTSTRAP_SERVER=kafka:9092
 PARTITIONS=1
 REPLICATION_FACTOR=1
-KAFKA_CREATE_TOPICS_TIMEOUT=15
+KAFKA_CREATE_TOPICS_TIMEOUT=10
 
 # Application settings
 # kafka with redis project
 APP_WITH_REDIS_INPUT_TOPIC=loan-application-with-redis-events
 APP_WITH_REDIS_OUTPUT_TOPIC=loan-application-with-redis-events-processed
-
 
 # only kafka project
 APP_ONLY_KAFKA_INPUT_TOPIC=stream-loan-events
@@ -22,6 +21,7 @@ APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC=stream-loan-events-processed-channel
 # Docker and environment settings
 DOCKER_COMPOSE_FILE=docker-compose.yaml
 PYTHON=python
+PIP=pip
 
 # functions
 define topic_exists
@@ -37,7 +37,8 @@ define create_topic
 			--bootstrap-server $(BOOTSTRAP_SERVER) \
 			--create \
 			--topic $(1) \
-			--partitions $(PARTITIONS) 2>&1 | grep -v "already exists" || true; \
+			--partitions $(PARTITIONS) \
+			--replication-factor $(REPLICATION_FACTOR) 2>&1 | grep -v "already exists" || true; \
 	fi
 endef
 
@@ -64,7 +65,7 @@ define start_consumer
 		$(2)
 endef
 
-.PHONY: all up down clean kafka-* spark-* load-redis help
+.PHONY: all up down clean install test kafka-* spark-* load-redis help
 
 # Default target
 all: help
@@ -73,7 +74,6 @@ all: help
 help:
 	@echo "Available commands:"
 	@echo "Environment:"
-	@echo "  make install        - Install Python dependencies"
 	@echo "  make up            - Start all services"
 	@echo "  make down          - Stop all services"
 	@echo "  make clean         - Clean up temporary files and logs"
@@ -81,6 +81,8 @@ help:
 	@echo "Kafka commands:"
 	@echo "  make kafka-list    - List all Kafka topics"
 	@echo "  make kafka-delete-all      - Delete all Kafka topics"
+	@echo "  make kafka-create-all      - Create all Kafka topics"
+	@echo "  make kafka-recreate-all    - Recreate all Kafka topics"
 	@echo "  make kafka-recreate        - Recreate all Kafka topics"
 	@echo "  make kafka-consumer-input-redis     - Start consumer for Redis input topic"
 	@echo "  make kafka-consumer-output-redis    - Start consumer for Redis output topic"
@@ -94,13 +96,12 @@ help:
 
 
 
-# Environment management
 up:
 	@echo "Starting Docker Compose services..."
 	docker compose -f $(DOCKER_COMPOSE_FILE) up -d
 	@echo "Waiting for services to be ready..."
-	sleep 5
-	#$(MAKE) kafka-create
+	sleep $(KAFKA_CREATE_TOPICS_TIMEOUT)
+	$(MAKE) kafka-create-all
 
 down:
 	@echo "Stopping Docker Compose services..."
@@ -113,18 +114,25 @@ clean:
 	find . -type f -name "*.log" -delete
 	find . -type f -name ".coverage" -delete
 	find . -type d -name ".pytest_cache" -exec rm -r {} +
+	find . -type d -name ".eggs" -exec rm -r {} +
+	find . -type d -name "*.egg-info" -exec rm -r {} +
+	find . -type d -name "build" -exec rm -r {} +
+	find . -type d -name "dist" -exec rm -r {} +
 
 # Kafka topic management
 kafka-list:
 	@echo "Listing Kafka topics..."
 	docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --list
 
-kafka-delete-all:
-	@echo "Deleting all Kafka topics..."
-	docker exec $(KAFKA_CONTAINER) kafka-topics --bootstrap-server $(BOOTSTRAP_SERVER) --delete --topic '.*' || true
+kafka-delete-all: kafka-delete-output-redis-topic kafka-delete-input-redis-topic kafka-delete-output-only-kafka-topics kafka-delete-input-only-kafka-topic
+
+kafka-create-all: kafka-create-output-redis-topic kafka-create-input-redis-topic kafka-create-output-kafka-only-topics kafka-create-input-only-kafka-topic
+
+kafka-recreate: kafka-delete-all kafka-create-all
+
 
 # ------------------------------------------------------------------------------|
-# Application with Redis:														|
+# Application with Redis:                                                        |
 # ------------------------------------------------------------------------------|
 kafka-create-input-redis-topic:
 	$(call create_topic,$(APP_WITH_REDIS_INPUT_TOPIC))
@@ -151,46 +159,44 @@ kafka-recreate-kafka-redis: kafka-delete-kafka-redis kafka-create-kafka-redis
 
 # redis data loader - use at the beginning
 load-redis:
-	@echo "Loading data into Redis... redis_loader.loader.py"
+	@echo "Loading data into Redis..."
 	$(PYTHON) -m redis_loader.loader
 
 # kafka producer
 kafka-producer-redis:
-	@echo "Running Kafka producer with Redis... kafka_producer.run_kafka_with_redis_data_producer.py"
+	@echo "Running Kafka producer with Redis..."
 	$(PYTHON) -m kafka_producer.run_kafka_with_redis_data_producer
 
 # spark app
 spark-app-redis:
-	@echo "Running Spark application with Redis... sparky.app_kafka_with_redis.py"
+	@echo "Running Spark application with Redis..."
 	$(PYTHON) -m sparky.app_kafka_with_redis
 
 
 # ------------------------------------------------------------------------------|
-# Application with Kafka Only:													|
+# Application with Kafka Only:                                                   |
 # ------------------------------------------------------------------------------|
 kafka-create-input-only-kafka-topic:
 	$(call create_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
 
 kafka-create-output-kafka-only-topics:
-	@echo "Creating ... $(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC)"
+	@echo "Creating output topics..."
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
 	$(call create_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
 
-
 kafka-delete-input-only-kafka-topic:
 	$(call delete_topic,$(APP_ONLY_KAFKA_INPUT_TOPIC))
 
 kafka-delete-output-only-kafka-topics:
-	@echo "Deleting Kafka topics... $(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC) $(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC)"
+	@echo "Deleting output topics..."
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_RISK_TOPIC))
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_FRAUD_TOPIC))
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_STATS_TOPIC))
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_SEGMENT_TOPIC))
 	$(call delete_topic,$(APP_ONLY_KAFKA_OUTPUT_CHANNEL_TOPIC))
-
 
 kafka-create-kafka-only: kafka-create-input-only-kafka-topic kafka-create-output-kafka-only-topics
 kafka-delete-kafka-only: kafka-delete-input-only-kafka-topic kafka-delete-output-only-kafka-topics
@@ -216,9 +222,9 @@ kafka-consumer-output-only-kafka-channel:
 
 # application
 kafka-producer-kafka-only:
-	@echo "Running Kafka producer with Kafka Only: kafka_producer.run_kafka_only_data_producer."
+	@echo "Running Kafka producer with Kafka Only..."
 	$(PYTHON) -m kafka_producer.run_kafka_only_data_producer
 
 spark-app-kafka-only:
-	@echo "Running Spark application with Kafka Only: sparky.app_kafka_only.py"
+	@echo "Running Spark application with Kafka Only..."
 	$(PYTHON) -m sparky.app_kafka_only
